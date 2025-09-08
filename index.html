@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>TGPT Lab (Dark) - Fixed</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#11161f; --ink:#c9d4e3; --soft:#6b7c93; --accent:#00e5a8; --accent2:#66aaff; --danger:#ff5c7a;
+    --user:#12293a; --bot:#141a22; --border:#1f2a38;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,Arial,sans-serif;display:flex;flex-direction:column;height:100vh}
+  header{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;gap:10px;align-items:center;justify-content:space-between}
+  header .title{font-weight:700;letter-spacing:.5px}
+  header .right{display:flex;gap:8px;align-items:center}
+  select,button,input[type="file"],input[type="text"]{background:#0d131b;color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+  button{cursor:pointer}
+  button.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));border:none;color:#031418}
+  button.danger{background:var(--danger);border:none;color:#fff}
+  main{display:flex;gap:12px;flex:1;padding:12px;min-height:0}
+  #chat{flex:2;display:flex;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  #log{flex:1;padding:14px;overflow:auto}
+  .msg{max-width:85%;padding:10px 14px;border-radius:12px;margin:6px 0;white-space:pre-wrap;word-wrap:break-word}
+  .user{align-self:flex-end;background:var(--user)}
+  .bot{align-self:flex-start;background:var(--bot)}
+  #composer{border-top:1px solid var(--border);padding:10px;background:#0c121a;display:flex;gap:8px;flex-wrap:wrap}
+  #query{flex:1;border:1px solid var(--border);border-radius:10px;background:#0b1118;color:var(--ink);padding:10px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .muted{color:var(--soft)}
+  /* provider accents */
+  .prov-sky{ border-left:4px solid #66aaff; }
+  .prov-phind{ border-left:4px solid #8a6cff; }
+  .prov-pollinations{ border-left:4px solid #00e5a8; }
+  .prov-koboldai{ border-left:4px solid #ff9f43; }
+  .prov-kimi{ border-left:4px solid #999; }
+  #helpPanel{position:fixed;right:12px;top:60px;max-width:420px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;display:none}
+</style>
+</head>
+<body>
+  <header>
+    <div class="title">⚡ TGPT Lab (Dark)</div>
+    <div class="right">
+      <select id="provider" title="Choose provider">
+        <option value="sky">Sky (free)</option>
+        <option value="phind" selected>Phind (free)</option>
+        <option value="pollinations">Pollinations (free)</option>
+        <option value="koboldai">KoboldAI (local)</option>
+        <!-- kimi removed until auth is available -->
+        <option value="group">Group (all providers)</option>
+      </select>
+      <button id="helpBtn">Help</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="chat">
+      <div id="log"></div>
+      <div id="composer" class="row">
+        <input id="query" type="text" placeholder="Type your message…" />
+        <input id="file" type="file" />
+        <button id="send" class="primary">Send</button>
+
+        <button id="clear-history" class="danger">Clear History</button>
+        <button id="brainstorm" class="primary" title="Run one brainstorm round or toggle auto if checked">Brainstorm</button>
+        <label class="muted"><input type="checkbox" id="autoBrain" /> Auto</label>
+        <button id="stopBrain" class="danger">Stop</button>
+
+        <label class="muted"><input type="checkbox" id="saveChat" /> Save</label>
+        <select id="saveFormat" title="Export format">
+          <option value="csv">CSV</option>
+          <option value="json" selected>JSON</option>
+        </select>
+        <select id="saveShape" title="Dataset shape">
+          <option value="lines" selected>Lines</option>
+          <option value="dialog">Dialog</option>
+        </select>
+        <input id="filename" type="text" placeholder="File name (optional)" />
+
+        <!-- SOP Mode checkbox -->
+        <label class="muted"><input type="checkbox" id="sopMode" /> SOP Mode</label>
+      </div>
+      <div id="helpPanel" class="muted">
+        <b>Tips</b><br/>
+        • Provider “Group” sends in parallel to: sky, phind, pollinations, koboldai. (kimi disabled).<br/>
+        • Auto Brainstorm repeats every 12s until you press Stop.<br/>
+        • History is loaded by session. This tab’s session_id is shown in console.<br/>
+        • “Save” writes CSV/JSON under server folder /var/www/htdocs/datasets.
+      </div>
+    </section>
+  </main>
+
+<script>
+  const API_HOST = `http://${location.hostname}:8080`;
+  const ASK_URL  = `${API_HOST}/ask`;
+  const BRAIN_URL = `${API_HOST}/brainstorm`;
+  const HISTORY_URL = `${API_HOST}/history`;
+
+  // Stable session per tab
+  const sessionId = localStorage.getItem("tgpt_session_id") || (function(){
+    const id = "sess_" + Math.random().toString(36).slice(2,10);
+    localStorage.setItem("tgpt_session_id", id);
+    console.log("Session ID:", id);
+    return id;
+  })();
+
+  const log = document.getElementById('log');
+  const qInput = document.getElementById('query');
+  const fileInput = document.getElementById('file');
+  const providerSel = document.getElementById('provider');
+  const sendBtn = document.getElementById('send');
+  const brainBtn = document.getElementById('brainstorm');
+  const stopBtn = document.getElementById('stopBrain');
+  const autoBrain = document.getElementById('autoBrain');
+  const saveChat = document.getElementById('saveChat');
+  const saveFormat = document.getElementById('saveFormat');
+  const saveShape = document.getElementById('saveShape');
+  const filenameInput = document.getElementById('filename');
+  const helpBtn = document.getElementById('helpBtn');
+  const helpPanel = document.getElementById('helpPanel');
+
+  helpBtn.addEventListener('click', () => {
+    helpPanel.style.display = helpPanel.style.display === 'none' ? 'block' : 'none';
+  });
+
+  function addMsg(provider, text, timeStr, dateStr, cls){
+    if (!text || text.trim()==="") return;
+    const d = document.createElement('div');
+    d.className = 'msg ' + cls + ' prov-' + provider.toLowerCase().replace(/\s+/g,'');
+    d.dataset.provider = provider; // reliable for brainstorm
+    d.dataset.timestamp = `${dateStr} ${timeStr}`;
+    d.textContent = `[${timeStr}][${provider}]: ${text} (${dateStr})`;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function loadHistory(){
+    try {
+      const r = await fetch(`${HISTORY_URL}?session_id=${encodeURIComponent(sessionId)}`);
+      if (!r.ok) {
+        const t = await r.text();
+        addMsg("System", `History HTTP ${r.status}: ${t}`, new Date().toLocaleTimeString(), new Date().toISOString().split('T')[0], "bot");
+        return;
+      }
+      const data = await r.json();
+      if (Array.isArray(data.history)){
+        data.history.forEach(item=>{
+          const ts = (item.timestamp || "").split(" ");
+          const date = ts[0] || new Date().toISOString().split("T")[0];
+          const time = ts[1] || new Date().toLocaleTimeString();
+          const who = item.provider === "You" ? "You" : item.provider;
+          addMsg(who, item.message, time, date, item.provider === "You" ? "user" : "bot");
+        });
+      } else {
+        addMsg("System", "No history", new Date().toLocaleTimeString(), new Date().toISOString().split('T')[0], "bot");
+      }
+    } catch (e){
+      addMsg("System", "Error loading history: " + e.message, new Date().toLocaleTimeString(), new Date().toISOString().split('T')[0], "bot");
+    }
+  }
+
+  async function sendMessage(){
+    let q = qInput.value.trim();
+    const prov = providerSel.value;
+    const fd = new FormData();
+    const file = fileInput.files[0];
+
+    if(!q && !file) return;
+
+    // if file present and q empty -> placeholder
+    if(file && !q){
+      q = `[file:${file.name}]`;
+    }
+
+    // append session id and SOP flag
+    fd.append("session_id", sessionId);
+    fd.append("sop", document.getElementById("sopMode").checked ? "1" : "0");
+    fd.append("query", q);
+    fd.append("provider", prov);
+    if(file) fd.append("file", file);
+    fd.append("save_dataset", saveChat.checked ? "1":"0");
+    fd.append("save_format", saveFormat.value);
+    fd.append("save_shape", saveShape.value);
+    fd.append("filename", filenameInput.value);
+
+    const now = new Date();
+    addMsg("You", q || (file ? `[file: ${file.name}]` : ""), now.toLocaleTimeString(), now.toISOString().split('T')[0], "user");
+
+    qInput.value = ""; fileInput.value = "";
+
+    try {
+      const r = await fetch(ASK_URL, { method:"POST", body:fd });
+      const data = await r.json();
+      if (data.error){
+        addMsg("System", data.error, new Date().toLocaleTimeString(), new Date().toISOString().split('T')[0], "bot");
+        return;
+      }
+      const push = (item)=>{
+        if (item && item.provider && item.reply){
+          const dt = item.timestamp || new Date().toISOString().replace('T',' ').split('.')[0];
+          const [date,time] = dt.split(' ');
+          addMsg(item.provider, item.reply, time, date, "bot");
+        }
+      };
+      if (data.reply) push(data);
+      if (Array.isArray(data.multi)) data.multi.forEach(push);
+    } catch (e){
+      addMsg("System", "Error: " + e.message, new Date().toLocaleTimeString(), new Date().toISOString().split('T')[0], "bot");
+    }
+  }
+
+  function brainstormOnce(){
+    const prov = providerSel.value;
+    const msgs = [...log.querySelectorAll('.msg.bot')].map(d=>{
+      return {
+        provider: d.dataset.provider || "unknown",
+        reply: d.textContent.replace(/^\[[^\]]+\]\[[^\]]+\]:\s*/,'').replace(/\s*\([0-9\-]+\)$/, '')
+      };
+    }).filter(m=> m.provider && m.reply);
+
+    fetch(BRAIN_URL, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        session_id: sessionId,
+        providers: [prov],
+        messages: msgs,
+        save_dataset: saveChat.checked ? 1 : 0,
+        save_format: saveFormat.value,
+        save_shape: saveShape.value,
+        filename: filenameInput.value
+      })
+    }).then(r=>r.json()).then(data=>{
+      if (data.error){
+        addMsg("System", data.error, new Date().toLocaleTimeString(), new Date().toISOString().split('T')[0], "bot");
+        return;
+      }
+      if (Array.isArray(data.multi)){
+        data.multi.forEach(item=>{
+          if (item.provider && item.reply){
+            const dt = item.timestamp || new Date().toISOString().replace('T',' ').split('.')[0];
+            const [date,time] = dt.split(' ');
+            addMsg(item.provider, item.reply, time, date, "bot");
+          }
+        });
+      }
+    }).catch(e=> addMsg("System","Error: "+e.message,new Date().toLocaleTimeString(),new Date().toISOString().split('T')[0],"bot"));
+  }
+
+  let autoTimer = null;
+  brainBtn.addEventListener('click', ()=>{
+    if (autoBrain.checked){
+      if (autoTimer){ clearInterval(autoTimer); autoTimer=null; return; }
+      autoTimer = setInterval(brainstormOnce, 12000); // 12 sec
+    } else {
+      brainstormOnce();
+    }
+  });
+  stopBtn.addEventListener('click', ()=>{
+    if (autoTimer){ clearInterval(autoTimer); autoTimer=null; }
+  });
+
+  sendBtn.addEventListener('click', sendMessage);
+  qInput.addEventListener('keydown', (e)=>{ if(e.key==="Enter"){ e.preventDefault(); sendMessage(); } });
+const clearHistoryBtn = document.getElementById("clear-history");
+
+clearHistoryBtn.addEventListener("click", async () => {
+    try {
+        const response = await fetch(`${API_HOST}/clear-history`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `session_id=${sessionId}`,
+        });
+        const data = await response.json();
+        if (data.message) {
+            console.log("History cleared successfully");
+            log.innerHTML = ""; // Clear the chat log
+        } else {
+            console.error("Error clearing history:", data.error);
+        }
+    } catch (error) {
+        console.error("Error clearing history:", error);
+    }
+});
+
+  // load history on start
+  loadHistory();
+</script>
+</body>
+</html>
