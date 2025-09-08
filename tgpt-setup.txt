@@ -1,0 +1,96 @@
+ 
+# SETUP_TGPT.txt
+# Amalek-tgpt Project - Installing tgpt on Different Systems
+
+This guide explains how to install **tgpt**, the lightweight AI chat client used in Amalek-tgpt,
+on Linux, Slackware, macOS, and Windows.
+
+---
+
+## 1. Linux (Debian/Ubuntu/Fedora/Arch)
+### Using pipx (recommended)
+    pip install --upgrade pip pipx
+    pipx install tgpt
+
+### Or via pip
+    pip install tgpt
+
+### Verify installation
+    tgpt --help
+
+---
+
+## 2. Slackware
+Slackware does not ship pipx by default, so do the following:
+
+1. Make sure Python 3.9+ and pip are installed:
+    python3 --version
+    python3 -m ensurepip --upgrade
+
+2. Install tgpt via pip:
+    python3 -m pip install --upgrade tgpt
+
+3. Or install with sbopkg (if you use sbopkg and a SlackBuild exists):
+    sbopkg -i tgpt
+
+4. Optionally, create a wrapper script in `/usr/local/bin/tgpt`:
+    #!/bin/sh
+    python3 -m tgpt "$@"
+
+5. Verify:
+    tgpt --help
+
+---
+
+## 3. macOS
+### Using Homebrew (if available):
+    brew install pipx
+    pipx install tgpt
+
+### Or via pip directly:
+    python3 -m pip install tgpt
+
+### Verify:
+    tgpt --help
+
+---
+
+## 4. Windows
+1. Install Python 3.9+ from official site:
+   https://www.python.org/downloads/windows/
+
+2. Make sure to check **"Add Python to PATH"** during installation.
+
+3. Open Command Prompt (cmd) and run:
+    pip install tgpt
+
+4. Verify:
+    tgpt --help
+
+---
+
+## 5. Optional: Build from Source
+If you want the latest development version:
+
+    git clone https://github.com/aandrew-me/tgpt.git
+    cd tgpt
+    pip install .
+
+---
+
+## 6. Testing tgpt
+Run a test command:
+    tgpt -p "Hello from Amalek-tgpt project"
+
+Expected:
+    You should see an AI-generated response in your terminal.
+tgpt --provider sky -is for interactive shell mode
+tgpt --provider phind -is for interactive shell mode
+--help for more providers and flags suported , shell mode is simulation not real for system safe usage
+---
+
+## Notes
+- Make sure your PATH includes the location of tgpt after install.
+- In Slackware, if pip installs to `/usr/local/bin`, add it to PATH if not already.
+- If you use `sbopkg`, run it as root (or with sudo) and ensure the SlackBuild repository is up to date.
+- `api_allinone.py` uses the `tgpt` binary directly, so ensure it runs without full path.

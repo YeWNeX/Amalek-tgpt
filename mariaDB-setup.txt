@@ -1,0 +1,98 @@
+ 
+# SETUP_DB.txt
+# Amalek-tgpt Project - MariaDB Setup Guide
+
+This guide explains how to configure MariaDB for Amalek-tgpt, create the database,
+and prepare tables required for storing conversations, attachments, and error logs.
+
+---
+
+## 1. Install MariaDB
+On Slackware or Linux:
+    sudo slackpkg install mariadb
+    # or use your package manager
+
+Start and enable MariaDB:
+    sudo systemctl start mariadb
+    sudo systemctl enable mariadb
+
+Run the secure installation (set root password, remove test db, etc.):
+    sudo mysql_secure_installation
+
+---
+
+## 2. Create Database and User
+Login to MariaDB:
+    mysql -u root -p
+
+Run these commands:
+
+    CREATE DATABASE chatbot CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+    CREATE USER 'chatuser'@'localhost' IDENTIFIED BY 'StrongPasswordHere';
+
+    GRANT ALL PRIVILEGES ON chatbot.* TO 'chatuser'@'localhost';
+
+    FLUSH PRIVILEGES;
+
+---
+
+## 3. Create Tables
+Switch to database:
+    USE chatbot;
+
+Create tables:
+
+    CREATE TABLE conversations (
+        id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(50),
+        provider VARCHAR(50),
+        sender VARCHAR(128),
+        message MEDIUMTEXT,
+        type ENUM('user','bot','brainstorm','system','you','unknown') DEFAULT 'bot',
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE attachments (
+        id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(50),
+        file_name VARCHAR(255),
+        file_path VARCHAR(255),
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE error_logs (
+        id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        provider VARCHAR(50),
+        error_message TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+---
+
+## 4. Update API Config
+Edit `api_allinone.py` and configure DB connection:
+
+    DB_CONFIG = {
+        "host": "localhost",
+        "user": "chatuser",
+        "password": "StrongPasswordHere",
+        "database": "chatbot"
+    }
+
+---
+
+## 5. Test Connection
+Run:
+    python3 api_allinone.py
+
+Expected log:
+    [DB] Connected to MariaDB successfully
+
+---
+
+## Notes
+- Replace `StrongPasswordHere` with a strong password.
+- `session_id` links conversations to a single chat window.
+- Use `/clear-history` API to wipe conversations by session.
+- All bots share the same DB for memory and history tracking.
